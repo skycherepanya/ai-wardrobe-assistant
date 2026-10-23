@@ -36,6 +36,8 @@ export function CameraUploadModal({ isOpen, onClose, onSaved }: CameraUploadModa
   const [originalSnap, setOriginalSnap] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isCuttingOut, setIsCuttingOut] = useState(false);
+  const [cutoutProgress, setCutoutProgress] = useState(0);
+  const [cutoutStage, setCutoutStage] = useState('Segmenting Clothing...');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,15 +104,20 @@ export function CameraUploadModal({ isOpen, onClose, onSaved }: CameraUploadModa
     }
   };
 
-  // Magic Background Cutout Handler
+  // Magic Background Cutout Handler (AI Neural Network Segmentation)
   const handleMagicCutout = async () => {
     if (!imagePreview) return;
     setIsCuttingOut(true);
+    setCutoutProgress(0);
+    setCutoutStage('Analyzing Clothing...');
     try {
       const sourceImage = originalSnap || imagePreview;
       const cutout = await processStudioCutout(sourceImage, {
-        sensitivity: 35,
         studioBackground: 'studio-white',
+        onProgress: (percent, stage) => {
+          setCutoutProgress(percent);
+          setCutoutStage(stage);
+        },
       });
       setImagePreview(cutout);
       setIsCutoutApplied(true);
@@ -283,12 +290,21 @@ export function CameraUploadModal({ isOpen, onClose, onSaved }: CameraUploadModa
                 )}
 
                 {isCuttingOut && (
-                  <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center gap-2 text-zinc-200">
+                  <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center text-zinc-200 gap-3">
                     <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
-                    <span className="text-xs font-medium flex items-center gap-1.5 text-purple-300">
-                      <Wand2 className="w-3.5 h-3.5" />
-                      Cleaning Background to Studio Look...
-                    </span>
+                    <div className="space-y-1.5 w-full max-w-[200px]">
+                      <p className="text-xs font-semibold text-purple-200 flex items-center justify-center gap-1.5">
+                        <Wand2 className="w-3.5 h-3.5 text-purple-400" />
+                        {cutoutStage}
+                      </p>
+                      <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-purple-500 to-sky-400 h-full transition-all duration-300"
+                          style={{ width: `${cutoutProgress}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-zinc-400 font-mono">{cutoutProgress}%</p>
+                    </div>
                   </div>
                 )}
 

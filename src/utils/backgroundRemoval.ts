@@ -1,136 +1,100 @@
-/**
- * Client-Side Background Removal & Studio Standardization
- * Analyzes peripheral background pixels (e.g. bedsheet, floor, rug)
- * and isolates the foreground garment with edge feathering and a clean studio backdrop.
- */
+import { removeBackground, type Config } from '@imgly/background-removal';
 
 export interface StudioProcessOptions {
-  featherRadius?: number;
-  sensitivity?: number; // 0 - 100
-  studioBackground?: 'transparent' | 'studio-white' | 'studio-dark';
+  onProgress?: (progressPercent: number, stageText: string) => void;
+  studioBackground?: 'transparent' | 'studio-white';
 }
 
+/**
+ * AI Neural Network Background Removal (Client-Side ONNX / Saliency Model)
+ * Accurately segments clothing from complex textures (bedsheets, blankets, carpets, floors).
+ */
 export async function processStudioCutout(
   base64Src: string,
   options: StudioProcessOptions = {}
 ): Promise<string> {
-  const {
-    sensitivity = 35,
-    studioBackground = 'transparent',
-  } = options;
+  const { onProgress, studioBackground = 'studio-white' } = options;
 
+  const config: Config = {
+    model: 'small', // Fast mobile-friendly model (~20MB cached in browser)
+    progress: (key: string, current: number, total: number) => {
+      if (total > 0 && onProgress) {
+        const percent = Math.round((current / total) * 100);
+        const stage = key.includes('fetch') ? 'Loading AI Model...' : 'Segmenting Clothing...';
+        onProgress(percent, stage);
+      }
+    },
+    output: {
+      format: 'image/png',
+      quality: 0.85,
+    },
+  };
+
+  // Run neural network segmentation
+  const cutoutBlob = await removeBackground(base64Src, config);
+
+  // Convert Blob to Base64
+  const cutoutBase64 = await blobToBase64(cutoutBlob);
+
+  if (studioBackground === 'transparent') {
+    return cutoutBase64;
+  }
+
+  // Composite onto studio backdrop with gentle spotlight
+  return renderOnStudioBackdrop(cutoutBase64);
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read cutout blob'));
+    reader.onload = () => resolve(reader.result as string);
+    reader.readAsDataURL(blob);
+  });
+}
+
+function renderOnStudioBackdrop(cutoutBase64: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onerror = () => reject(new Error('Failed to load image for background processing'));
+    img.onerror = () => reject(new Error('Failed to load cutout image for studio canvas'));
     img.onload = () => {
-      try {
-        const width = img.naturalWidth || img.width;
-        const height = img.naturalHeight || img.height;
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
 
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) {
-          reject(new Error('Canvas 2D context unavailable'));
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, width, height);
-        const imgData = ctx.getImageData(0, 0, width, height);
-        const data = imgData.data;
-
-        // 1. Sample perimeter border pixels to identify background color profile
-        const samplePoints: [number, number][] = [];
-        const stepX = Math.max(1, Math.floor(width / 20));
-        const stepY = Math.max(1, Math.floor(height / 20));
-
-        // Top and bottom borders
-        for (let x = 0; x < width; x += stepX) {
-          samplePoints.push([x, 2], [x, 5], [x, height - 3], [x, height - 6]);
-        }
-        // Left and right borders
-        for (let y = 0; y < height; y += stepY) {
-          samplePoints.push([2, y], [5, y], [width - 3, y], [width - 6, y]);
-        }
-
-        let bgR = 0, bgG = 0, bgB = 0;
-        let validSamples = 0;
-
-        for (const [sx, sy] of samplePoints) {
-          const idx = (sy * width + sx) * 4;
-          bgR += data[idx];
-          bgG += data[idx + 1];
-          bgB += data[idx + 2];
-          validSamples++;
-        }
-
-        bgR = Math.round(bgR / validSamples);
-        bgG = Math.round(bgG / validSamples);
-        bgB = Math.round(bgB / validSamples);
-
-        const thresholdSq = Math.pow((sensitivity / 100) * 180, 2);
-
-        // 2. Compute color distance map and soft alpha mask
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-
-          // Euclidean distance squared in RGB
-          const distSq =
-            (r - bgR) * (r - bgR) +
-            (g - bgG) * (g - bgG) +
-            (b - bgB) * (b - bgB);
-
-          if (distSq < thresholdSq) {
-            // Close to background: calculate smooth falloff
-            const ratio = distSq / thresholdSq;
-            if (ratio < 0.6) {
-              data[i + 3] = 0; // Fully transparent background
-            } else {
-              data[i + 3] = Math.round(((ratio - 0.6) / 0.4) * 255);
-            }
-          }
-        }
-
-        ctx.putImageData(imgData, 0, 0);
-
-        // 3. Render onto requested studio backdrop
-        const finalCanvas = document.createElement('canvas');
-        finalCanvas.width = width;
-        finalCanvas.height = height;
-        const finalCtx = finalCanvas.getContext('2d');
-        if (!finalCtx) {
-          resolve(canvas.toDataURL('image/png'));
-          return;
-        }
-
-        if (studioBackground === 'studio-white') {
-          finalCtx.fillStyle = '#f8fafc';
-          finalCtx.fillRect(0, 0, width, height);
-          // Subtle soft studio spotlight
-          const grad = finalCtx.createRadialGradient(
-            width / 2, height / 2, width * 0.1,
-            width / 2, height / 2, width * 0.7
-          );
-          grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-          grad.addColorStop(1, 'rgba(241, 245, 249, 1)');
-          finalCtx.fillStyle = grad;
-          finalCtx.fillRect(0, 0, width, height);
-        } else if (studioBackground === 'studio-dark') {
-          finalCtx.fillStyle = '#18181b';
-          finalCtx.fillRect(0, 0, width, height);
-        }
-
-        finalCtx.drawImage(canvas, 0, 0);
-        resolve(finalCanvas.toDataURL(studioBackground === 'transparent' ? 'image/png' : 'image/jpeg', 0.88));
-      } catch (err) {
-        reject(err);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(cutoutBase64);
+        return;
       }
+
+      // 1. Crisp studio white-grey background
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, width, height);
+
+      // 2. Subtle soft radial spotlight behind the garment
+      const gradient = ctx.createRadialGradient(
+        width / 2,
+        height / 2,
+        width * 0.1,
+        width / 2,
+        height / 2,
+        width * 0.75
+      );
+      gradient.addColorStop(0, '#ffffff');
+      gradient.addColorStop(1, '#f1f5f9');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+
+      // 3. Draw garment on top
+      ctx.drawImage(img, 0, 0, width, height);
+
+      resolve(canvas.toDataURL('image/jpeg', 0.88));
     };
-    img.src = base64Src;
+    img.src = cutoutBase64;
   });
 }
