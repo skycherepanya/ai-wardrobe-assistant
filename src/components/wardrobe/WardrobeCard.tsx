@@ -69,8 +69,19 @@ export function WardrobeCard({ item, onToggleClean, onDelete }: WardrobeCardProp
       </div>
 
       {/* Card Info footer */}
-      <div className="p-2.5 flex items-center justify-between text-xs text-zinc-400">
-        <span className="truncate font-medium text-zinc-300">{item.color}</span>
+      <div className="p-2.5 flex flex-col gap-0.5 text-xs text-zinc-400">
+        <div className="flex items-center justify-between">
+          <span className="truncate font-medium text-zinc-200">
+            {item.name || item.color}
+          </span>
+          {item.isCutout && (
+            <span className="text-[10px] text-purple-400 font-medium">✨ Studio</span>
+          )}
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-zinc-500">
+          <span>{item.brand || item.color}</span>
+          <span>{item.color !== item.name ? item.color : ''}</span>
+        </div>
       </div>
     </div>
   );

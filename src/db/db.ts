@@ -17,6 +17,10 @@ export interface WardrobeItem {
   season: Season | string;
   isClean: boolean; // Note: IndexedDB booleans are not natively indexable in all engines, handled via helper queries or 1/0 if needed
   createdAt: number; // Unix epoch timestamp (Date.now())
+  name?: string; // e.g. "Oversized Boxy Tee"
+  brand?: string; // e.g. "Uniqlo", "Zara", "Nike"
+  isCutout?: boolean; // True if background was cleaned/isolated
+  searchQuery?: string; // Precomputed search term for finding official catalog photos
 }
 
 /**
@@ -115,6 +119,10 @@ export const wardrobeRepo = {
       season: item.season,
       isClean: item.isClean ?? true,
       createdAt: Date.now(),
+      name: item.name,
+      brand: item.brand,
+      isCutout: item.isCutout,
+      searchQuery: item.searchQuery,
     };
     await db.wardrobeItems.add(newItem);
     return newItem;

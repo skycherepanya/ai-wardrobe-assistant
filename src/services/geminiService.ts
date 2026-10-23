@@ -13,6 +13,9 @@ export interface AutoTagResult {
   category: WardrobeCategory;
   color: string;
   season: Season | string;
+  name?: string;
+  brand?: string;
+  searchQuery?: string;
 }
 
 export interface WeatherContext {
@@ -95,7 +98,7 @@ export async function analyzeClothingImage(
   const { mimeType, data } = parseBase64DataUrl(imageBase64);
 
   const prompt =
-    'Analyze this clothing item. Return ONLY a valid JSON object: { category: string, color: string, season: string }.';
+    'Analyze this clothing item. Return ONLY a valid JSON object: { category: string, color: string, season: string, name: string, brand: string, searchQuery: string }. Specify clean product name (e.g. "Oversized Boxy Tee"), recognizable brand or "Generic", and a Google search query for finding its official studio photo.';
 
   const response = await ai.models.generateContent({
     model: MODEL_NAME,
@@ -133,6 +136,18 @@ export async function analyzeClothingImage(
             type: Type.STRING,
             enum: ['Spring', 'Summer', 'Fall', 'Winter', 'All-Season'],
             description: 'Best suited season for wearing this item.',
+          },
+          name: {
+            type: Type.STRING,
+            description: 'Specific garment model or style name (e.g. Slim Chino Trousers).',
+          },
+          brand: {
+            type: Type.STRING,
+            description: 'Brand if visible or identifiable, or Generic/Unbranded.',
+          },
+          searchQuery: {
+            type: Type.STRING,
+            description: 'Google Image search query to find the official catalog photo on white background.',
           },
         },
         required: ['category', 'color', 'season'],
